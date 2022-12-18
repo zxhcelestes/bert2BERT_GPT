@@ -578,7 +578,7 @@ def set_dense(new_model, org_model, org_hidden_size, target_hidden_size):
             weights1 = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
                                   target_col=target_hidden_size, to_expand="col")
             dic[key] = expand_copy(weights1, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
-                                   target_col=target_hidden_size, to_expand="row")
+                                   target_col=1, to_expand="row")
         elif "bias" in key:
             dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
                                    target_col=1, to_expand="row")

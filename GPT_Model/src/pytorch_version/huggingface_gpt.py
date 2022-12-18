@@ -912,6 +912,8 @@ class GPT2Model(GPT2PreTrainedModel):
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
 
+        ln_f_output = self.ln_f(hidden_states) if self.ln_f is not None else None
+
         if not return_dict:
             return tuple(
                 v

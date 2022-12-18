@@ -17,12 +17,12 @@ def expand_GPT(org_GPT, target_GPT_config, method):
     # 找到decoder块
     modules = org_GPT.name_cells()
     for key in modules.keys():
-        if "decoder" in key:
+        if "gpt2_decoder" in key:
             decoder.append(modules.get(key))
 
     modules = new_GPT.name_cells()
     for key in modules.keys():
-        if "decoder" in key:
+        if "gpt2_decoder" in key:
             decoder.append(modules.get(key))
     set_decoder(new_GPT, org_GPT, decoder[0], decoder[1], org_hidden_size=org_GPT.n_embed,
                 target_hidden_size=new_GPT.n_embed,

@@ -40,7 +40,7 @@ def compare_vocab_embedding(sentence, ms_GPT, py_GPT):
                                    1)
     # 打开测试模式，去除dropout的影响
     py_GPT.eval()
-    py_output = py_GPT(**inputs).pooler_output.detach().numpy()
+    py_output = py_GPT(**inputs).pool_output.detach().numpy()
 
     inputs["input_mask"] = inputs.get("attention_mask")
     inputs.pop("attention_mask")
