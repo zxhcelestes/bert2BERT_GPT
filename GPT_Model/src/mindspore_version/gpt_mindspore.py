@@ -38,14 +38,14 @@ class GPT2Config:
            batch_size (int): Batch size of input dataset. Default: 512.
            seq_length (int): Length of input sequence. Default: 1024.
            vocab_size (int): The shape of each embedding vector. Default: 50257.
-           d_model (int): Size of the bert encoder layers. Default: 768.
-           num_hidden_layers (int): Number of hidden layers in the GPT2Transformer decoder block. Default: 12.
-           num_attention_heads (int): Number of attention heads in the GPT2Transformer decoder block. Default: 12.
+           n_embed (int): Size of the bert encoder layers. Default: 768.
+           n_layer (int): Number of hidden layers in the GPT2Transformer decoder block. Default: 12.
+           n_head (int): Number of attention heads in the GPT2Transformer decoder block. Default: 12.
            intermediate_size (int): Size of intermediate layer in the GPT2Transformer decoder block. Default: 3072.
            hidden_act (str): Activation function used in the GPT2Transformer decoder block. Default: "gelu".
            hidden_dropout (float): The dropout probability for GPT2Output. Default: 0.1.
            attention_dropout (float): The dropout probability for MaskedMultiHeadAttention. Default: 0.1.
-           max_position_embeddings (int): Maximum length of sequences used in this model. Default: 1024.
+           n_positions (int): Maximum length of sequences used in this model. Default: 1024.
            initializer_range (float): Initialization value of TruncatedNormal. Default: 0.02.
            input_mask_from_dataset (bool): Specifies whether to use the input mask that loaded from dataset.
                                            Default: True.
@@ -58,37 +58,40 @@ class GPT2Config:
                  batch_size=512,
                  seq_length=1024,
                  vocab_size=50257,
-                 d_model=768,
-                 num_hidden_layers=12,
-                 num_attention_heads=12,
+                 n_embed=768,
+                 n_layer=12,
+                 n_head=12,
+                 size_per_head=None,
                  intermediate_size=3072,
                  hidden_act="gelu",
                  hidden_dropout=0.1,
                  attention_dropout=0.1,
-                 max_position_embeddings=1024,
+                 n_positions=1024,
                  initializer_range=0.02,
                  input_mask_from_dataset=True,
                  summary_first_dropout=0.1,
                  dtype=mstype.float32,
                  compute_type=mstype.float16,
                  ):
+        self.size_per_head=size_per_head
         self.batch_size = batch_size
         self.seq_length = seq_length
         self.vocab_size = vocab_size
-        self.d_model = d_model
-        self.num_hidden_layers = num_hidden_layers
-        self.num_attention_heads = num_attention_heads
+        self.n_embed = n_embed
+        self.n_layer = n_layer
+        self.n_head = n_head
         self.intermediate_size = intermediate_size
         self.hidden_act = hidden_act
         self.hidden_dropout = hidden_dropout
         self.attention_dropout = attention_dropout
-        self.max_position_embeddings = max_position_embeddings
+        self.n_positions = n_positions
         self.initializer_range = initializer_range
         self.input_mask_from_dataset = input_mask_from_dataset
         self.summary_first_dropout = summary_first_dropout
         self.dtype = dtype
         self.compute_type = compute_type
-
+        if self.size_per_head is None:
+            self.size_per_head=self.n_embed//self.n_head
 
 class EmbeddingLookup(nn.Cell):
     """
@@ -162,19 +165,19 @@ class EmbeddingPostprocessor(nn.Cell):
     Args:
         embedding_dim (int): The size of each embedding vector.
         seq_length (int): the length of input sequence.
-        max_position_embeddings (int): Maximum length of sequences used in this model. Default: 1024.
+        n_positions (int): Maximum length of sequences used in this model. Default: 1024.
         dropout_prob (float): The dropout probability. Default: 0.1.
      """
 
     def __init__(self,
                  embedding_dim=None,
                  seq_length=None,
-                 max_position_embeddings=1024,
+                 n_positions=1024,
                  dropout_prob=0.1):
         super(EmbeddingPostprocessor, self).__init__()
 
         self.position_embedding_table = Parameter(
-            normal_weight([max_position_embeddings, embedding_dim], embedding_dim), name='position_embeddings')
+            normal_weight([n_positions, embedding_dim], embedding_dim), name='position_embeddings')
         self.expand_dims = P.ExpandDims()
         self.add = P.TensorAdd()
         self.gather = P.GatherV2()
@@ -338,24 +341,24 @@ class MaskedSelfAttention(nn.Cell):
 
     Args:
         batch_size (int): Batch size of input datasets. Default: 512.
-        d_model (int): Size of last dim of input tensor. Default: 768.
+        n_embed (int): Size of last dim of input tensor. Default: 768.
         seq_length (int): Length of input tensor sequence. Default: 1024.
-        num_attention_heads (int): Number of attention heads. Default: 12.
+        n_head (int): Number of attention heads. Default: 12.
         dim_per_head (int): Size of each attention head. Default: 64.
         has_attention_mask (bool): Specifies whether to use attention mask. Default: True.
         attention_dropout (float): The dropout probability for MultiheadAttention. Default: 0.0.
         compute_type (:class:`mindspore.dtype`): Compute type in MultiheadAttention. Default: mstype.float32.
 
     Returns:
-        Tensor, with the shape [batch_size, seq_length, d_model]
+        Tensor, with the shape [batch_size, seq_length, n_embed]
 
     """
 
     def __init__(self,
                  batch_size=512,
-                 d_model=768,
+                 n_embed=768,
                  seq_length=1024,
-                 num_attention_heads=12,
+                 n_head=12,
                  dim_per_head=64,
                  has_attention_mask=True,
                  do_return_2d_tensor=True,
@@ -364,9 +367,9 @@ class MaskedSelfAttention(nn.Cell):
         super(MaskedSelfAttention, self).__init__()
 
         self.batch_size = batch_size
-        self.d_model = d_model
+        self.n_embed = n_embed
         self.seq_length = seq_length
-        self.num_heads = num_attention_heads
+        self.num_heads = n_head
         self.dim_per_head = dim_per_head
         self.has_attention_mask = has_attention_mask
         self.compute_type = compute_type
@@ -376,8 +379,8 @@ class MaskedSelfAttention(nn.Cell):
         self.mask_data = Tensor([-10000.0,], dtype=compute_type)
         self.split_head_shape = (-1, self.seq_length, self.num_heads, self.dim_per_head)
 
-        self.c_attn = Conv1D(d_model, d_model * 3)
-        self.c_proj = Conv1D(d_model, d_model)
+        self.c_attn = Conv1D(n_embed, n_embed * 3)
+        self.c_proj = Conv1D(n_embed, n_embed)
 
         self.split_for_qkv = P.Split(1, 3)
         self.reshape = P.Reshape()
@@ -395,9 +398,9 @@ class MaskedSelfAttention(nn.Cell):
             self.get_dtype = P.DType()
 
         if do_return_2d_tensor:
-            self.shape_return = (-1, d_model)
+            self.shape_return = (-1, n_embed)
         else:
-            self.shape_return = (-1, seq_length, d_model)
+            self.shape_return = (-1, seq_length, n_embed)
 
         self.softmax = nn.Softmax()
         self.softmax_cast = P.Cast()
@@ -415,11 +418,11 @@ class MaskedSelfAttention(nn.Cell):
                                      shape with [batch_size, seq_len, seq_len].
 
         Returns:
-            outputs (Tensor): the output of masked self-attention, shape with [batch_size * seq_len, d_model].
+            outputs (Tensor): the output of masked self-attention, shape with [batch_size * seq_len, n_embed].
         """
-        input_tensor = self.c_attn(input_tensor)  # [batch_size * seq_length, d_model*3]---> eg.[1 * 3, 2304]
+        input_tensor = self.c_attn(input_tensor)  # [batch_size * seq_length, n_embed*3]---> eg.[1 * 3, 2304]
         input_tensor = self.split_for_qkv(input_tensor)
-        query = input_tensor[0]  # [batch_size * seq_length, d_model] ---> eg. [1 * 3, 768]
+        query = input_tensor[0]  # [batch_size * seq_length, n_embed] ---> eg. [1 * 3, 768]
         key = input_tensor[1]
         value = input_tensor[2]
 
@@ -468,7 +471,7 @@ class MaskedSelfAttention(nn.Cell):
         # merge heads
         outputs = self.transpose(outputs, self.trans_shape)  # [batch_size, seq_len, num_heads, dim_per_head]
         outputs = self.reshape(outputs,
-                               self.shape_return)  # default True, the outputs shape [batch_size * seq_len, d_model]
+                               self.shape_return)  # default True, the outputs shape [batch_size * seq_len, n_embed]
 
         # project
         outputs = self.c_proj(outputs)
@@ -509,18 +512,18 @@ class FeedForward(nn.Cell):
         FeedForward construct function with layernorm and residual connection.
 
         Args:
-            input_tensor (Tensor): the input of FeedForward layer, shape with [batch_szie * seq_len, d_model].
+            input_tensor (Tensor): the input of FeedForward layer, shape with [batch_szie * seq_len, n_embed].
 
         Returns:
-            output (Tensor): the output of FeedForward layer, shape with [batch_szie * seq_len, d_model]
+            output (Tensor): the output of FeedForward layer, shape with [batch_szie * seq_len, n_embed]
         """
         # LayerNorm
         output = self.layernorm(input_tensor)
         # Feed Forward
-        output = self.c_fc(output)  # [batch_szie * seq_len, d_model * 4]
+        output = self.c_fc(output)  # [batch_szie * seq_len, n_embed * 4]
         output = self.gelu_act(output)
         # output = self.gelu(output)
-        output = self.c_proj(output)  # [batch_szie * seq_len, d_model]
+        output = self.c_proj(output)  # [batch_szie * seq_len, n_embed]
         if self.use_dropout:
             output = self.dropout(output)
         # Add
@@ -535,25 +538,25 @@ class MaskedMultiHeadAttention(nn.Cell):
     def __init__(self,
                  batch_size=512,
                  seq_length=2014,
-                 d_model=768,
-                 num_attention_heads=12,
+                 n_embed=768,
+                 n_head=12,
                  attention_dropout=0.02,
                  hidden_dropout=0.1,
                  has_attention_mask=True,
                  compute_type=mstype.float16
                  ):
         super(MaskedMultiHeadAttention, self).__init__()
-        if d_model % num_attention_heads != 0:
+        if n_embed % n_head != 0:
             raise ValueError("The hidden size (%d) is not a multiple of the number "
-                             "of attention heads (%d)" % (d_model, num_attention_heads))
+                             "of attention heads (%d)" % (n_embed, n_head))
 
-        self.dim_per_head = int(d_model / num_attention_heads)  # 64
+        self.dim_per_head = int(n_embed / n_head)  # 64
 
         self.masked_self_attention = MaskedSelfAttention(
             batch_size=batch_size,
-            d_model=d_model,
+            n_embed=n_embed,
             seq_length=seq_length,
-            num_attention_heads=num_attention_heads,
+            n_head=n_head,
             dim_per_head=self.dim_per_head,
             has_attention_mask=has_attention_mask,
             do_return_2d_tensor=True,
@@ -561,11 +564,11 @@ class MaskedMultiHeadAttention(nn.Cell):
             compute_type=compute_type
         )
 
-        self.layer_norm = LayerNorm(in_channels=d_model)
+        self.layer_norm = LayerNorm(in_channels=n_embed)
         self.residual_connection = ResidualConnection()
 
         self.reshape = P.Reshape()
-        self.new_shape = (-1, d_model)
+        self.new_shape = (-1, n_embed)
 
     def construct(self, input_tensor, attention_mask):
         """
@@ -578,12 +581,12 @@ class MaskedMultiHeadAttention(nn.Cell):
                                      shape with [batch_size, seq_len, seq_len].
 
         Returns:
-            outputs (Tensor): the output of MaskedMultiHeadAttention, shape with [batch_size * seq_len, d_model].
+            outputs (Tensor): the output of MaskedMultiHeadAttention, shape with [batch_size * seq_len, n_embed].
         """
         # LayerNorm
         output_tensor = self.layer_norm(input_tensor)
         # masked multi-head attention
-        # attention_output shape [batch_size * seq_length, d_model]
+        # attention_output shape [batch_size * seq_length, n_embed]
         attention_output = self.masked_self_attention(output_tensor, attention_mask)
         # residual connection
         output = self.residual_connection(attention_output, input_tensor)
@@ -597,8 +600,8 @@ class DecoderBlock(nn.Cell):
     Args:
         batch_size (int): Batch size of input dataset. Default: 512.
         seq_length (int): Length of input sequence. Default: 1024.
-        d_model (int): Size of the GPT2 decoder layers. Default: 768.
-        num_attention_heads (int): Number of attention heads. Default: 12.
+        n_embed (int): Size of the GPT2 decoder layers. Default: 768.
+        n_head (int): Number of attention heads. Default: 12.
         intermediate_size (int): Size of intermediate layer. Default: 3072.
         attention_dropout (float): The dropout probability for MaskedMultiHeadAttention. Default: 0.02.
         hidden_dropout (float): The dropout probability for hidden outputs. Default: 0.1.
@@ -609,8 +612,8 @@ class DecoderBlock(nn.Cell):
     def __init__(self,
                  batch_size=512,
                  seq_length=1024,
-                 d_model=768,
-                 num_attention_heads=12,
+                 n_embed=768,
+                 n_head=12,
                  intermediate_size=3072,
                  attention_dropout=0.02,
                  hidden_dropout=0.1,
@@ -618,33 +621,33 @@ class DecoderBlock(nn.Cell):
                  compute_type=mstype.float16
                  ):
         super(DecoderBlock, self).__init__()
-        if d_model % num_attention_heads != 0:
+        if n_embed % n_head != 0:
             raise ValueError("The hidden size (%d) is not a multiple of the number "
-                             "of attention heads (%d)" % (d_model, num_attention_heads))
+                             "of attention heads (%d)" % (n_embed, n_head))
 
-        self.dim_per_head = int(d_model / num_attention_heads)  # 64
+        self.dim_per_head = int(n_embed / n_head)  # 64
 
         self.masked_multi_head_attention = MaskedMultiHeadAttention(
             batch_size=batch_size,
             seq_length=seq_length,
-            d_model=d_model,
-            num_attention_heads=num_attention_heads,
+            n_embed=n_embed,
+            n_head=n_head,
             attention_dropout=attention_dropout,
             hidden_dropout=hidden_dropout,
             has_attention_mask=has_attention_mask,
             compute_type=compute_type
         )
         self.feedforward = FeedForward(
-            in_channels=d_model,
-            out_channels=d_model,
+            in_channels=n_embed,
+            out_channels=n_embed,
             hidden_size=intermediate_size,
             hidden_dropout=hidden_dropout
         )
 
         self.reshape = P.Reshape()
-        self.new_shape = (-1, d_model)
+        self.new_shape = (-1, n_embed)
 
-    def construct(self, input_tensor, attention_mask):  # input tensor shape[batch_size, seq_length, d_model]
+    def construct(self, input_tensor, attention_mask):  # input tensor shape[batch_size, seq_length, n_embed]
         """
         DecoderBlock with masked_multi_head_attention and feedforward.
         Args:
@@ -654,7 +657,7 @@ class DecoderBlock(nn.Cell):
                                      shape with [batch_size, seq_len, seq_len].
 
         Returns:
-            outputs (Tensor): the output of DecoderBlock, shape with [batch_size * seq_len, d_model].
+            outputs (Tensor): the output of DecoderBlock, shape with [batch_size * seq_len, n_embed].
         """
         input_tensor = self.reshape(input_tensor, self.new_shape)
 
@@ -672,10 +675,10 @@ class GPT2Transformer(nn.Cell):
 
     Args:
         batch_size (int): Batch size of input dataset. Default: 512.
-        d_model (int): Size of the decoder layers. Default: 768.
+        n_embed (int): Size of the decoder layers. Default: 768.
         seq_length (int): Length of input sequence. Default: 1024.
-        num_hidden_layers (int): Number of hidden layers in decoder cells. Default: 12.
-        num_attention_heads (int): Number of attention heads in decoder cells. Default: 12.
+        n_layer (int): Number of hidden layers in decoder cells. Default: 12.
+        n_head (int): Number of attention heads in decoder cells. Default: 12.
         intermediate_size (int): Size of intermediate layer in decoder cells. Default: 3072.
         has_attention_mask (bool): Specifies whether to use attention mask. Default: True.
         attention_dropout (float): The dropout probability for MaskedMultiHeadAttention. Default: 0.1.
@@ -685,10 +688,10 @@ class GPT2Transformer(nn.Cell):
 
     def __init__(self,
                  batch_size=512,
-                 d_model=768,
+                 n_embed=768,
                  seq_length=1024,
-                 num_hidden_layers=12,
-                 num_attention_heads=12,
+                 n_layer=12,
+                 n_head=12,
                  intermediate_size=3072,
                  has_attention_mask=True,
                  attention_dropout=0.1,
@@ -697,11 +700,11 @@ class GPT2Transformer(nn.Cell):
         super(GPT2Transformer, self).__init__()
 
         layers = []
-        for _ in range(num_hidden_layers):
+        for _ in range(n_layer):
             layer = DecoderBlock(batch_size=batch_size,
                                  seq_length=seq_length,
-                                 d_model=d_model,
-                                 num_attention_heads=num_attention_heads,
+                                 n_embed=n_embed,
+                                 n_head=n_head,
                                  intermediate_size=intermediate_size,
                                  attention_dropout=attention_dropout,
                                  hidden_dropout=hidden_dropout,
@@ -712,9 +715,9 @@ class GPT2Transformer(nn.Cell):
         self.layers = nn.CellList(layers)
 
         self.reshape = P.Reshape()
-        self.new_shape = (-1, d_model)
-        # self.out_shape = (batch_size, seq_length, d_model)
-        self.out_shape = (-1, seq_length, d_model)
+        self.new_shape = (-1, n_embed)
+        # self.out_shape = (batch_size, seq_length, n_embed)
+        self.out_shape = (-1, seq_length, n_embed)
 
     def construct(self, input_tensor, attention_mask):
         """
@@ -727,7 +730,7 @@ class GPT2Transformer(nn.Cell):
                                      shape with [batch_size, seq_len, seq_len].
 
         Returns:
-            outputs (Tensor): the output of GPT2Transformer, shape with [batch_size * seq_len, d_model].
+            outputs (Tensor): the output of GPT2Transformer, shape with [batch_size * seq_len, n_embed].
         """
         prev_output = self.reshape(input_tensor, self.new_shape)
         for layer_module in self.layers:
@@ -819,11 +822,16 @@ class GPT2Model(nn.Cell):
         self.input_mask_from_dataset = self.config.input_mask_from_dataset
         self.batch_size = self.config.batch_size
         self.seq_length = self.config.seq_length
-        self.d_model = self.config.d_model
-        self.num_hidden_layers = self.config.num_hidden_layers
-        self.embedding_dim = self.config.d_model
+        self.n_embed = self.config.n_embed
+        self.n_layer = self.config.n_layer
+        self.embedding_dim = self.config.n_embed
+        self.n_head=self.config.n_head
+        self.size_per_head=self.config.size_per_head
+        self.intermediate_size=self.config.intermediate_size
+        if self.size_per_head is None:
+            self.size_per_head = self.n_embd // self.n_head
 
-        self.last_idx = self.num_hidden_layers - 1
+        self.last_idx = self.n_layer - 1
 
         self.gpt2_embedding_lookup = EmbeddingLookup(
             vocab_size=self.config.vocab_size,
@@ -834,15 +842,15 @@ class GPT2Model(nn.Cell):
         self.gpt2_embedding_postprocess = EmbeddingPostprocessor(
             embedding_dim=self.embedding_dim,
             seq_length=self.seq_length,
-            max_position_embeddings=self.config.max_position_embeddings,
+            n_positions=self.config.n_positions,
             dropout_prob=self.config.hidden_dropout
         )
         self.gpt2_decoder = GPT2Transformer(
             batch_size=self.batch_size,
-            d_model=self.d_model,
+            n_embed=self.n_embed,
             seq_length=self.seq_length,
-            num_hidden_layers=self.num_hidden_layers,
-            num_attention_heads=self.config.num_attention_heads,
+            n_layer=self.n_layer,
+            n_head=self.config.n_head,
             intermediate_size=self.config.intermediate_size,
             has_attention_mask=True,
             attention_dropout=self.config.attention_dropout,
@@ -851,12 +859,12 @@ class GPT2Model(nn.Cell):
         )
 
         self.cast_compute_type = CastWrapper(dst_type=self.config.compute_type)
-        self.layer_norm = LayerNorm(in_channels=self.d_model)
+        self.layer_norm = LayerNorm(in_channels=self.n_embed)
         self.dropout = nn.Dropout(1 - self.config.hidden_dropout)
         self._create_attention_mask_from_input_mask = CreateAttentionMaskFromInputMask(self.config)
 
         self.reshape = P.Reshape()
-        self.new_shape = (-1, self.d_model)
+        self.new_shape = (-1, self.n_embed)
 
     def construct(self, input_ids, input_mask):
         """
@@ -868,8 +876,8 @@ class GPT2Model(nn.Cell):
                 where 0 indicates padding position.
 
         Returns:
-            decoder_output (Tensor): shape[batch_size, seq_len, d_model].
-            embedding_tables (Tensor): word embeddings with shape [vocab_size, d_model]
+            decoder_output (Tensor): shape[batch_size, seq_len, n_embed].
+            embedding_tables (Tensor): word embeddings with shape [vocab_size, n_embed]
         """
         # Embedding
         word_embeddings, embedding_tables = self.gpt2_embedding_lookup(input_ids)
@@ -888,7 +896,7 @@ class GPT2Model(nn.Cell):
         # LayerNorm
         decoder_output = self.reshape(decoder_output, self.new_shape)
         decoder_output = self.layer_norm(decoder_output)
-        decoder_output = self.reshape(decoder_output, (-1, self.seq_length, self.d_model))
+        decoder_output = self.reshape(decoder_output, (-1, self.seq_length, self.n_embed))
 
         return decoder_output, embedding_tables
 
@@ -902,7 +910,7 @@ if __name__ == '__main__':
 
     model = GPT2Model(GPT_config, is_training=True)
     print(model.parameters_dict())
-    print(model.num_hidden_layers)
+    print(model.n_layer)
     cells = model.cells_and_names()
     childs_name = model.name_cells()
     # for x in cells:

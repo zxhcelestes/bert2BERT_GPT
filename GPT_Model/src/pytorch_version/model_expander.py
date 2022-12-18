@@ -1,6 +1,6 @@
 from .GPT_config import GPT2Config
 from .huggingface_gpt import GPT2Model
-from .loader import set_encoder
+from .loader import set_decoder
 
 
 def expand_GPT(org_GPT, target_GPT_config, method="FPI"):
@@ -19,15 +19,15 @@ def expand_GPT(org_GPT, target_GPT_config, method="FPI"):
     # 找到Encoder块
     modules = org_GPT.named_children()
     for key, data in modules:
-        if "encoder" in key:
+        if "gpt2_decoder" in key:
             encoder.append(data)
     modules = new_GPT.named_children()
     for key, data in modules:
-        if "encoder" in key:
+        if "gpt2_decoder" in key:
             encoder.append(data)
     org_enc = encoder[0]
     new_enc = encoder[1]
-    set_encoder(new_GPT, org_GPT, org_enc, new_enc, org_hidden_size=org_GPT.config.hidden_size,
+    set_decoder(new_GPT, org_GPT, org_enc, new_enc, org_hidden_size=org_GPT.config.hidden_size,
                 target_hidden_size=new_GPT.config.hidden_size,
                 method=method,
                 new_num_layers=new_GPT.config.num_hidden_layers)

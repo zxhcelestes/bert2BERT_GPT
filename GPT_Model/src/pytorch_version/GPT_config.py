@@ -125,7 +125,8 @@ class GPT2Config(PretrainedConfig):
             n_layer=12,
             n_head=12,
             n_inner=None,
-            activation_function="gelu",
+            size_per_head=None,
+            activation_function="gelu_new",
             resid_pdrop=0.1,
             embd_pdrop=0.1,
             attn_pdrop=0.1,
@@ -150,6 +151,7 @@ class GPT2Config(PretrainedConfig):
         self.n_layer = n_layer
         self.n_head = n_head
         self.n_inner = n_inner
+        self.size_per_head=size_per_head
         self.activation_function = activation_function
         self.resid_pdrop = resid_pdrop
         self.embd_pdrop = embd_pdrop
@@ -168,5 +170,7 @@ class GPT2Config(PretrainedConfig):
 
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
+        if self.size_per_head is None:
+            self.size_per_head=self.n_embd//self.n_head
 
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)

@@ -36,7 +36,7 @@ def find_embeddings(new_model):
 
 def find_dense_weight(new_model):
     dense_part = []
-    pattern = "^dense.*"
+    pattern = "^ln_f.*"
     all_layers = list(new_model.get_parameters())
     for param in all_layers:
         name = param.name

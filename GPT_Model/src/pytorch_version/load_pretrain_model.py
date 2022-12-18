@@ -29,7 +29,7 @@ def pre_defined_GPT_config(name):
         return GPT2Config(batch_size=512,
                           seq_length=1024,
                           vocab_size=50257,
-                          n_embd=768,
+                          n_embd=1024,
                           n_layer=24,
                           n_head=16,
                           intermediate_size=3072,
@@ -47,7 +47,7 @@ def pre_defined_GPT_config(name):
         return GPT2Config(batch_size=512,
                           seq_length=1024,
                           vocab_size=50257,
-                          n_embd=768,
+                          n_embd=1280,
                           n_layer=36,
                           n_head=20,
                           intermediate_size=3072,
@@ -65,7 +65,7 @@ def pre_defined_GPT_config(name):
         return GPT2Config(batch_size=512,
                           seq_length=1024,
                           vocab_size=50257,
-                          n_embd=768,
+                          n_embd=1600,
                           n_layer=48,
                           n_head=25,
                           intermediate_size=3072,
@@ -116,18 +116,15 @@ def load_GPT_base(path, kind, filter_prefix=None, specify_prefix=None, load_gite
     pyt_dict = model.state_dict()
     # print(len(pyt_dict.keys()))
     # quit()
-    # position_ids = pyt_dict.get('embeddings.position_ids')
-    # 这个没有预训练参数
-    # pyt_dict.pop('embeddings.position_ids')
     org_keys = list(params_dict.keys())
-    new_keys = list(pyt_dict.keys())
-    # 有一个参数位置反了，调换
-    new_keys[1], new_keys[2] = new_keys[2], new_keys[1]
+    new_keys = list()
+    tmp=0
+    for name,param in model.named_parameters():
+        new_keys.append(name)
     for x, y in zip(org_keys, new_keys):
         # print(x, "     ", y)
         # print(params_dict.get(x)[1].shape, "     ", pyt_dict.get(y).shape)
         pyt_dict[y] = params_dict.get(x)[1]
-
     # pyt_dict['embeddings.position_ids'] = position_ids
     model.load_state_dict(state_dict=pyt_dict, strict=True)
     return model

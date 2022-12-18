@@ -7,7 +7,7 @@ from .utils.find_utils import find_ffn_block, find_mha_block, find_embeddings, f
 
 def set_block1(new_model, org_block, org_hidden_size, target_hidden_size):
     """
-    根据论文附录图13，从下往上第一个模块 。这个模块和embedding链接，所以设计Wemb，后续encoder不需要操作这个参数
+    根据论文附录图13，从下往上第一个模块 。这个模块和embedding链接，所以设计Wemb，后续decoder不需要操作这个参数
     :param new_model: 新模型
     :param org_block: [W_emb, W_ln, W_l^{QKV}]
     :param org_hidden_size: 初始隐藏层规模
@@ -15,7 +15,7 @@ def set_block1(new_model, org_block, org_hidden_size, target_hidden_size):
     """
     choose_num_dict = generate_random_match(org_hidden_size, target_hidden_size)
     dic = dict()
-    head_size = new_model.size_per_head * new_model.num_attention_heads
+    head_size = new_model.size_per_head * new_model.n_head
 
     for param in org_block:
         key = param.name
@@ -63,15 +63,15 @@ def set_block2(new_model, org_block, org_hidden_size, target_hidden_size):
     :param org_hidden_size: 初始隐藏层规模
     :param target_hidden_size: 目标隐藏层规模
     """
-    head_size = new_model.num_attention_heads * new_model.size_per_head
+    head_size = new_model.n_head * new_model.size_per_head
     intermediate = new_model.intermediate_size
     choose_num_dict = generate_random_match(org_hidden_size, target_hidden_size)
     dic = dict()
     for param in org_block:
         key = param.name
         weights = param
-        # gpt_encoder.layers.0.attention.output.dense.weight (768, 768)
-        # gpt_encoder.layers.0.attention.output.layernorm.gamma (768,)
+        # gpt_decoder.layers.0.attention.output.dense.weight (768, 768)
+        # gpt_decoder.layers.0.attention.output.layernorm.gamma (768,)
         if "attention" in key:
             if "output" in key:
                 if weights.ndim == 2:
@@ -121,8 +121,8 @@ def set_block3(new_model, org_block, org_hidden_size, target_hidden_size):
     for param in org_block:
         key = param.name
         weights = param
-        # gpt_encoder.layers.0.output.dense.weight (768, 3072)
-        # gpt_encoder.layers.0.output.layernorm.gamma (768,)
+        # gpt_decoder.layers.0.output.dense.weight (768, 3072)
+        # gpt_decoder.layers.0.output.layernorm.gamma (768,)
         if "output" in key:
             if "dense" in key:
                 if "weight" in key:
@@ -251,7 +251,7 @@ def set_mha_fpi(new_model, mha_block, org_head_num, target_head_num):
     """
     # 选择的头 (10:1) 十号头选1号头的参数
     size_per_head = new_model.size_per_head
-    num_heads = new_model.num_attention_heads
+    num_heads = new_model.n_head
     head_size = size_per_head * num_heads
     choose_head_dict = generate_random_match(org_head_num, target_head_num)
     new_dict = dict()
@@ -310,7 +310,7 @@ def set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_num, target_head_n
     """
     # 选择的头 (10:1) 十号头选1号头的参数
     size_per_head = new_model.size_per_head
-    num_heads = new_model.num_attention_heads
+    num_heads = new_model.n_head
     head_size = size_per_head * num_heads
     choose_head_dict = generate_random_match(org_head_num, target_head_num)
     new_dict = dict()
@@ -359,39 +359,39 @@ def set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_num, target_head_n
     return dic
 
 
-def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size, target_hidden_size,
+def set_decoder(new_model, org_model, org_decoder, new_decoder, org_hidden_size, target_hidden_size,
                 new_num_layers=None,
                 method="FPI"):
     """
-    修改encoder参数规模,encoder 一般是一个ModuleList，包含多个gptLayer，每个gptLayer有如下结构
+    修改decoder参数规模,decoder 一般是一个ModuleList，包含多个gptLayer，每个gptLayer有如下结构
     :param new_model: 扩展后的模型
     :param org_model: 原始模型
-    :param org_encoder: gpt中encoder块
+    :param org_decoder: gpt中decoder块
     :param org_hidden_size: 初始隐藏层规模
     :param target_hidden_size: 目标隐藏层规模
-    :param new_num_layers: 目标encoder层数
+    :param new_num_layers: 目标decoder层数
     :param method: 方法(FPI/AKI)
     """
-    encoder_layers = org_encoder.name_cells()
+    decoder_layers = org_decoder.name_cells()
     # 获取layers的ModuleList
-    layers = list(encoder_layers.values())
+    layers = list(decoder_layers.values())
     modulelist = layers[0]
 
-    # 获取ModuleList中每一个 gptEncoderCell
+    # 获取ModuleList中每一个 gptdecoderCell
 
     # 最后一层，只能用FPI
     if modulelist.__len__() == 1:
         method = "FPI"
 
     # step1 每个layer都跑一遍更新步骤1。只要跑小模型的深度即可。不管AKI还是FPI
-    logger.critical(f"step1 开始: 对{org_model.num_hidden_layers}个encoder。分三个块进行FPI")
-    for i in range(org_model.num_hidden_layers):
+    logger.critical(f"step1 开始: 对{org_model.n_layer}个decoder。分三个块进行FPI")
+    for i in range(org_model.n_layer):
         temp_layer = modulelist.__getitem__(i)
         set_gpt_layer_fpi(new_model, org_model, temp_layer, org_hidden_size, target_hidden_size, level=i)
 
-    encoder_layers = new_encoder.name_cells()
+    decoder_layers = new_decoder.name_cells()
     # 获取layers的ModuleList
-    layers = list(encoder_layers.values())
+    layers = list(decoder_layers.values())
     modulelist = layers[0]
 
     # step2 FFN扩展和MHA扩展(如果需要的话)
@@ -401,7 +401,7 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
         logger.critical("FFN扩展开始")
         dic = dict()
         if method == "FPI":
-            for i in range(org_model.num_hidden_layers):
+            for i in range(org_model.n_layer):
                 temp_layer = modulelist.__getitem__(i)
                 ffn_block = find_ffn_block(temp_layer)
                 temp_dic = set_ffn_fpi(new_model, ffn_block, org_intermediate_size=org_model.intermediate_size,
@@ -409,7 +409,7 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
                 dic.update(temp_dic)
         elif method == "AKI":
             temp_layer = modulelist.__getitem__(0)
-            for i in range(org_model.num_hidden_layers - 1):
+            for i in range(org_model.n_layer - 1):
                 nxt_layer = modulelist.__getitem__(i + 1)
                 ffn_block = find_ffn_block(temp_layer)
                 ffn_block_nxt = find_ffn_block(nxt_layer)
@@ -427,29 +427,29 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
         mindspore.load_param_into_net(new_model, dic, strict_load=False)
 
     # 多头扩展
-    if new_model.num_attention_heads > org_model.num_attention_heads:
+    if new_model.n_head > org_model.n_head:
         logger.critical("MHA扩展开始")
         dic = dict()
         if method == "FPI":
-            for i in range(org_model.num_hidden_layers):
+            for i in range(org_model.n_layer):
                 temp_layer = modulelist.__getitem__(i)
                 mha_block = find_mha_block(temp_layer)
-                temp_dic = set_mha_fpi(new_model, mha_block, org_head_num=org_model.num_attention_heads,
-                                       target_head_num=new_model.num_attention_heads)
+                temp_dic = set_mha_fpi(new_model, mha_block, org_head_num=org_model.n_head,
+                                       target_head_num=new_model.n_head)
                 dic.update(temp_dic)
         elif method == "AKI":
             temp_layer = modulelist.__getitem__(0)
-            for i in range(org_model.num_hidden_layers - 1):
+            for i in range(org_model.n_layer - 1):
                 nxt_layer = modulelist.__getitem__(i + 1)
                 mha_block = find_mha_block(temp_layer)
                 mha_block_nxt = find_mha_block(nxt_layer)
-                temp_dict = set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_num=org_model.num_attention_heads,
-                                        target_head_num=new_model.num_attention_heads)
+                temp_dict = set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_num=org_model.n_head,
+                                        target_head_num=new_model.n_head)
                 temp_layer = nxt_layer
                 dic.update(temp_dict)
             mha_block = find_mha_block(temp_layer)
-            temp_dict = set_mha_fpi(new_model, mha_block, org_head_num=org_model.num_attention_heads,
-                                    target_head_num=new_model.num_attention_heads)
+            temp_dict = set_mha_fpi(new_model, mha_block, org_head_num=org_model.n_head,
+                                    target_head_num=new_model.n_head)
             dic.update(temp_dict)
 
         else:
@@ -458,32 +458,32 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
         mindspore.load_param_into_net(new_model, dic, strict_load=False)
 
     # 深度扩展。论文的Algorithm 1
-    org_num_layers = org_model.num_hidden_layers
+    org_num_layers = org_model.n_layer
     if new_num_layers is None or org_num_layers == new_num_layers:
         pass
     else:
         # 计算是否能够整除？不能整除，则n！=0
         k, n = new_num_layers // org_num_layers, new_num_layers % org_num_layers
         logger.critical(f"深度扩展开始:纵向复制{k - 1}次，高位补齐{n}位")
-        # 找到新模型中已经修改好的encoder_block
+        # 找到新模型中已经修改好的decoder_block
         paras_dict = new_model.parameters_dict()
 
-        # 将Encoder前org_num_layers的gptlayer提取，组成encoder_block
-        encoder_block = dict()
+        # 将decoder前org_num_layers的gptlayer提取，组成decoder_block
+        decoder_block = dict()
         for layer_name in paras_dict.keys():
-            if "encoder" in layer_name:
+            if "decoder" in layer_name:
                 if int(find_number(layer_name)) < org_num_layers:
-                    # 组成encoder_block
-                    encoder_block[layer_name] = paras_dict.get(layer_name)
+                    # 组成decoder_block
+                    decoder_block[layer_name] = paras_dict.get(layer_name)
 
         depth_dict = dict()
         for i in range(1, k):
             start = i * org_num_layers
             end = start + org_num_layers
-            tmp_dict = set_depth(new_model, encoder_block, org_num_layers, start, end)
+            tmp_dict = set_depth(new_model, decoder_block, org_num_layers, start, end)
             depth_dict.update(tmp_dict)
         # 多余的n层，用高处几层填上
-        tmp_dict = set_depth(new_model, encoder_block, org_num_layers, k * org_num_layers, k * org_num_layers + n)
+        tmp_dict = set_depth(new_model, decoder_block, org_num_layers, k * org_num_layers, k * org_num_layers + n)
         depth_dict.update(tmp_dict)
         mindspore.load_param_into_net(new_model, depth_dict, strict_load=False)
 
@@ -493,12 +493,12 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
     mindspore.load_param_into_net(new_model, dense_dict, strict_load=False)
 
 
-def set_depth(new_model, encoder_block, num_layers, start_idx, end_idx):
+def set_depth(new_model, decoder_block, num_layers, start_idx, end_idx):
     """
-    进行深度方向上的encoder块堆叠
+    进行深度方向上的decoder块堆叠
     :param new_model: 新模型
-    :param encoder_block: 已经完成AKI或者FPI的有org_num_layers层的encoder块,是一个state_dict
-    :param num_layers: encoder_block的层数
+    :param decoder_block: 已经完成AKI或者FPI的有org_num_layers层的decoder块,是一个state_dict
+    :param num_layers: decoder_block的层数
     :param start_idx: 待堆叠的layer下标
     :param end_idx: 尾部layer层下标
     """
@@ -512,12 +512,12 @@ def set_depth(new_model, encoder_block, num_layers, start_idx, end_idx):
         else:
             equal = idx % num_layers
         # 复制低layer层的参数，更改名称，放进当前的dict
-        for name in encoder_block.keys():
+        for name in decoder_block.keys():
             num_lay = find_number(name)
             if str(equal) == num_lay:
                 temp_name = name.replace(str(equal), str(idx), 1)
                 logger.info(f"{name}-->{temp_name}")
-                layer = encoder_block.get(name)
+                layer = decoder_block.get(name)
                 para = mindspore.Parameter(layer.data, name=temp_name)
                 temp_dict[temp_name] = para
     return temp_dict
@@ -529,16 +529,16 @@ def set_gpt_layer_fpi(new_model, org_model, gpt_layer, org_hidden_size, target_h
     gpt_layer: 定义好的gptLayer结构
     :param new_model: 新模型
     :param org_model: 原始模型
-    :param gpt_layer: 待操作的1个encoder
+    :param gpt_layer: 待操作的1个decoder
     :param org_hidden_size: 初始隐藏规模
     :param target_hidden_size: 目标隐藏规模
-    :param level: encoder级数
+    :param level: decoder级数
     """
     all_layers = list(gpt_layer.get_parameters())
     block1 = []
     block2 = []
     block3 = []
-    # 在第一级的encoder，需要加入embedding_table
+    # 在第一级的decoder，需要加入embedding_table
     for param in all_layers:
         name = param.name
         if "query" in name or "key" in name or "value" in name:

@@ -6,7 +6,7 @@ from loguru import logger
 
 def set_block1(new_model, org_block, org_hidden_size, target_hidden_size):
     """
-    根据论文附录图13，从下往上第一个模块 。这个模块和embedding链接，所以设计Wemb，后续encoder不需要操作这个参数
+    根据论文附录图13，从下往上第一个模块 。这个模块和wpe/wte链接，所以设计Wemb，后续decoder不需要操作这个参数
     :param new_model: 新模型
     :param org_block: [W_emb, W_ln, W_l^{QKV}]
     :param org_hidden_size: 初始隐藏层规模
@@ -18,7 +18,7 @@ def set_block1(new_model, org_block, org_hidden_size, target_hidden_size):
 
     for (key, param) in org_block:
         weights = param
-        if "embeddings" in key:
+        if "wpe" in key or "wte" in key:
             if weights.ndim == 2:
                 m, n = weights.shape
                 dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=m,
@@ -28,7 +28,7 @@ def set_block1(new_model, org_block, org_hidden_size, target_hidden_size):
                                        target_col=1, to_expand="row")
             else:
                 raise Exception("维度超过2")
-        elif "attention" in key:
+        elif "attn" in key:
             # KQV三个矩阵
             # 对注意力模型内部参数的修改
             if weights.ndim == 2:
@@ -109,8 +109,8 @@ def set_block3(new_model, org_block, org_hidden_size, target_hidden_size):
     dic = dict()
     for key, param in org_block:
         weights = param
-        # encoder.layer.0.output.LayerNorm.weight --> torch.Size([108])
-        # encoder.layer.0.output.LayerNorm.bias --> torch.Size([108])
+        # gpt2_decoder.0.output.LayerNorm.weight --> torch.Size([108])
+        # gpt2_decoder.0.output.LayerNorm.bias --> torch.Size([108])
         if "output" in key:
             if "dense" in key:
                 if "weight" in key:
@@ -150,11 +150,11 @@ def set_ffn_fpi(new_model, ffn_block, org_intermediate_size, target_intermediate
         if "intermediate" in key:
             if "weight" in key:
                 dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_intermediate_size,
-                                      target_col=hidden_size, to_expand="row")
+                                       target_col=hidden_size, to_expand="row")
             elif "bias" in key:
                 dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_intermediate_size,
-                                      target_col=1,
-                                      to_expand="row")
+                                       target_col=1,
+                                       to_expand="row")
             else:
                 raise Exception
         elif "output.dense" in key:
@@ -191,13 +191,13 @@ def set_ffn_aki(new_model, ffn_block, ffn_block_nxt, org_intermediate_size, targ
         if "intermediate" in key:
             if "weight" in key:
                 dic[key] = expand_aki_copy(weights, param_nxt, choose_num_dict=choose_num_dict,
-                                      target_row=target_intermediate_size,
-                                      target_col=hidden_size, to_expand="row")
+                                           target_row=target_intermediate_size,
+                                           target_col=hidden_size, to_expand="row")
             elif "bias" in key:
                 dic[key] = expand_aki_copy(weights, param_nxt, choose_num_dict=choose_num_dict,
-                                      target_row=target_intermediate_size,
-                                      target_col=1,
-                                      to_expand="row")
+                                           target_row=target_intermediate_size,
+                                           target_col=1,
+                                           to_expand="row")
             else:
                 raise Exception
         elif "output.dense" in key:
@@ -324,44 +324,48 @@ def set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_num, target_head_n
     return dic
 
 
-def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size, target_hidden_size,
+def set_decoder(new_model, org_model, org_decoder, new_decoder, org_hidden_size, target_hidden_size,
                 new_num_layers=None,
                 method="FPI"):
     """
-    修改encoder参数规模,encoder 一般是一个ModuleList，包含多个GPTLayer，每个GPTLayer有如下结构
+    修改decoder参数规模,decoder 一般是一个ModuleList，包含多个GPTLayer，每个GPTLayer有如下结构
     :param new_model: 扩展后的模型
     :param org_model: 原始模型
-    :param org_encoder: GPT中encoder块
+    :param org_decoder: GPT中decoder块
     :param org_hidden_size: 初始隐藏层规模
     :param target_hidden_size: 目标隐藏层规模
-    :param new_num_layers: 目标encoder层数
+    :param new_num_layers: 目标decoder层数
     :param method: 方法(FPI/AKI)
     """
-    encoder_layers = org_encoder.named_children()
+    decoder_layers = org_decoder.named_children()
     # 获取layers的ModuleList
-    layers = list(encoder_layers)
-    modulelist = layers[0][1]
+    modulelist = list()
+    for i in decoder_layers:
+        modulelist.append(i[1])
+    # modulelist = layers[0][1]
     org_layers = org_model.config.num_hidden_layers
 
-    # 获取ModuleList中每一个 GPTEncoderCell
+    # 获取ModuleList中每一个 GPTDecoderCell
 
     # 最后一层，只能用FPI
     if modulelist.__len__() == 1:
         method = "FPI"
-
     # step1 每个layer都跑一遍更新步骤1，不管AKI还是FPI
-    logger.critical(f"step1 开始: 对{org_model.config.num_hidden_layers}个encoder。分三个块进行FPI")
+    logger.critical(f"step1 开始: 对{org_model.config.num_hidden_layers}个decoder。分三个块进行FPI")
 
     for i in range(org_model.config.num_hidden_layers):
         temp_layer = modulelist.__getitem__(i)
         set_GPT_layer_fpi(new_model, org_model, temp_layer, org_hidden_size, target_hidden_size, level=i,
-                           prefix=f"encoder.layer.{i}.")
+                          prefix=f"gpt2_decoder.{i}.")
 
     # 完成step1后，用新的矩阵完成后续扩展
-    encoder_layers = new_encoder.named_children()
+    decoder_layers = new_decoder.named_children()
     # 获取layers的ModuleList
-    layers = list(encoder_layers)
-    modulelist = layers[0][1]
+    modulelist = list()
+    for i in decoder_layers:
+        modulelist.append(i[1])
+    # modulelist = layers[0][1]
+    org_layers = org_model.config.num_hidden_layers
 
     # step2 FFN扩展和MHA扩展(如果需要的话)
     logger.critical(f"step2 开始: 使用{method}策略扩展FFN或MHA(如果需要的话)")
@@ -372,7 +376,7 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
         if method == "FPI":
             for i in range(org_layers):
                 temp_layer = modulelist.__getitem__(i)
-                ffn_block = find_ffn_block(temp_layer,f"encoder.layer.{i}.")
+                ffn_block = find_ffn_block(temp_layer, f"gpt2_decoder.{i}.")
                 temp_dic = set_ffn_fpi(new_model, ffn_block, org_intermediate_size=org_model.config.intermediate_size,
                                        target_intermediate_size=new_model.config.intermediate_size)
                 dic.update(temp_dic)
@@ -380,13 +384,13 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
             temp_layer = modulelist.__getitem__(0)
             for i in range(org_layers - 1):
                 nxt_layer = modulelist.__getitem__(i + 1)
-                ffn_block = find_ffn_block(temp_layer,f"encoder.layer.{i}.")
-                ffn_block_nxt = find_ffn_block(nxt_layer,f"encoder.layer.{i+1}.")
+                ffn_block = find_ffn_block(temp_layer, f"gpt2_decoder.{i}.")
+                ffn_block_nxt = find_ffn_block(nxt_layer, f"gpt2_decoder.{i + 1}.")
                 temp_dict = set_ffn_aki(new_model, ffn_block, ffn_block_nxt, org_model.config.intermediate_size,
                                         new_model.config.intermediate_size)
                 temp_layer = nxt_layer
                 dic.update(temp_dict)
-            ffn_block = find_ffn_block(temp_layer,f"encoder.layer.{org_layers - 1}.")
+            ffn_block = find_ffn_block(temp_layer, f"gpt2_decoder.{org_layers - 1}.")
             temp_dict = set_ffn_fpi(new_model, ffn_block, org_model.config.intermediate_size,
                                     new_model.config.intermediate_size)
             dic.update(temp_dict)
@@ -405,7 +409,7 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
         if method == "FPI":
             for i in range(org_layers):
                 temp_layer = modulelist.__getitem__(i)
-                mha_block = find_mha_block(temp_layer, f"encoder.layer.{i}.")
+                mha_block = find_mha_block(temp_layer, f"gpt2_decoder.{i}.")
                 temp_dic = set_mha_fpi(new_model, mha_block, org_head_num=org_model.config.num_attention_heads,
                                        target_head_num=new_model.config.num_attention_heads)
                 dic.update(temp_dic)
@@ -413,14 +417,14 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
             temp_layer = modulelist.__getitem__(0)
             for i in range(org_layers - 1):
                 nxt_layer = modulelist.__getitem__(i + 1)
-                mha_block = find_mha_block(temp_layer, f"encoder.layer.{i}.")
-                mha_block_nxt = find_mha_block(nxt_layer, f"encoder.layer.{i+1}.")
+                mha_block = find_mha_block(temp_layer, f"gpt2_decoder.{i}.")
+                mha_block_nxt = find_mha_block(nxt_layer, f"gpt2_decoder.{i + 1}.")
                 temp_dict = set_mha_aki(new_model, mha_block, mha_block_nxt,
                                         org_head_num=org_model.config.num_attention_heads,
                                         target_head_num=new_model.config.num_attention_heads)
                 temp_layer = nxt_layer
                 dic.update(temp_dict)
-            mha_block = find_mha_block(temp_layer, f"encoder.layer.{org_layers - 1}.")
+            mha_block = find_mha_block(temp_layer, f"gpt2_decoder.{org_layers - 1}.")
             temp_dict = set_mha_fpi(new_model, mha_block, org_head_num=org_model.config.num_attention_heads,
                                     target_head_num=new_model.config.num_attention_heads)
             dic.update(temp_dict)
@@ -439,34 +443,34 @@ def set_encoder(new_model, org_model, org_encoder, new_encoder, org_hidden_size,
         # 计算是否能够整除？不能整除，则n！=0
         k, n = new_num_layers // org_layers, new_num_layers % org_layers
         logger.critical(f"深度扩展开始:纵向复制{k - 1}次，高位补齐{n}位")
-        # 找到新模型中已经修改好的encoder_block
+        # 找到新模型中已经修改好的decoder_block
         paras_dict = new_model.state_dict()
-        # 将Encoder前org_num_layers的GPTlayer提取，组成encoder_block
-        encoder_block = dict()
+        # 将Decoder前org_num_layers的GPTlayer提取，组成decoder_block
+        decoder_block = dict()
         for layer_name in paras_dict.keys():
-            if "encoder" in layer_name:
+            if "decoder" in layer_name:
                 if int(find_number(layer_name)) < org_layers:
-                    # 组成encoder_block
-                    encoder_block[layer_name] = paras_dict.get(layer_name)
+                    # 组成decoder_block
+                    decoder_block[layer_name] = paras_dict.get(layer_name)
 
         for i in range(1, k):
             start = i * org_layers
             end = start + org_layers
-            set_depth(new_model, encoder_block, org_layers, start, end)
+            set_depth(new_model, decoder_block, org_layers, start, end)
         # 多余的n层，用高处几层填上
-        set_depth(new_model, encoder_block, org_layers, k * org_layers, k * org_layers + n)
+        set_depth(new_model, decoder_block, org_layers, k * org_layers, k * org_layers + n)
     # 把分类器的参数扩展
     logger.critical("开始扩展分类器参数")
     dense_dict = set_dense(new_model, org_model, org_hidden_size, target_hidden_size)
     new_model.load_state_dict(dense_dict, strict=False)
 
 
-def set_depth(new_model, encoder_block, num_layers, start_idx, end_idx):
+def set_depth(new_model, decoder_block, num_layers, start_idx, end_idx):
     """
-    进行深度方向上的encoder块堆叠
+    进行深度方向上的decoder块堆叠
     :param new_model: 新模型
-    :param encoder_block: 已经完成AKI或者FPI的有org_num_layers层的encoder块,是一个state_dict
-    :param num_layers: encoder_block的层数
+    :param decoder_block: 已经完成AKI或者FPI的有org_num_layers层的decoder块,是一个state_dict
+    :param num_layers: decoder_block的层数
     :param start_idx: 待堆叠的layer下标
     :param end_idx: 尾部layer层下标
     """
@@ -480,12 +484,12 @@ def set_depth(new_model, encoder_block, num_layers, start_idx, end_idx):
         else:
             equal = idx % num_layers
         # 复制低layer层的参数，更改名称，放进当前的dict
-        for name in encoder_block.keys():
+        for name in decoder_block.keys():
             num_lay = find_number(name)
             if str(equal) == num_lay:
                 temp_name = name.replace(str(equal), str(idx), 1)
                 logger.info(f"{name}-->{temp_name}")
-                layer = encoder_block.get(name)
+                layer = decoder_block.get(name)
                 temp_dict[temp_name] = layer.data
     new_model.load_state_dict(temp_dict, strict=False)
 
@@ -495,17 +499,17 @@ def set_GPT_layer_fpi(new_model, org_model, GPT_layer, org_hidden_size, target_h
     GPT_layer: 定义好的GPTLayer结构
     :param new_model: 新模型
     :param org_model: 原始模型
-    :param GPT_layer: 待操作的1个encoder
+    :param GPT_layer: 待操作的1个decoder
     :param org_hidden_size: 初始隐藏规模
     :param target_hidden_size: 目标隐藏规模
-    :param level: encoder级数
+    :param level: decoder级数
     :param prefix: 前缀
     """
     all_layers = list(GPT_layer.named_parameters())
     block1 = []
     block2 = []
     block3 = []
-    # 在第一级的encoder，需要加入embedding_table
+    # 在第一级的decoder，需要加入embedding_table
     for name, param in all_layers:
         name = prefix + name
         if "query" in name or "key" in name or "value" in name:
@@ -544,11 +548,12 @@ def set_dense(new_model, org_model, org_hidden_size, target_hidden_size):
     dic = dict()
     for key, weights in dense_block:
         if "weight" in key:
-            # 先扩展输入
-            weights1 = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
-                                  target_col=target_hidden_size, to_expand="col")
-            dic[key] = expand_copy(weights1, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
-                                   target_col=target_hidden_size, to_expand="row")
+            # weights1 = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+            #                       target_col=target_hidden_size, to_expand="col")
+            # dic[key] = expand_copy(weights1, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+            #                        target_col=target_hidden_size, to_expand="row")
+            dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+                                   target_col=1, to_expand="row")
         elif "bias" in key:
             dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
                                    target_col=1, to_expand="row")

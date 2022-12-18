@@ -85,7 +85,7 @@ class MindsporeEnlarger:
     @staticmethod
     def gpt_large2xl_aki():
         ckpt_path = f"{root}/ckpt/gpt_large.ckpt"
-        save_path = f"{root}/output/gpt_large2xl_aki.pth"
+        save_path = f"{root}/output/gpt_large2xl_aki.ckpt"
         if not os.path.exists(save_path):
             pre_train_model = ld_ms(path=ckpt_path, filter_prefix=["lamb_m", "gpt.cls1"],
                                     specify_prefix="gpt.gpt", kind="gpt_large", load_gitee_ckpt=True)
@@ -95,7 +95,7 @@ class MindsporeEnlarger:
     @staticmethod
     def gpt_large2xl_fpi():
         ckpt_path = f"{root}/ckpt/gpt_large.ckpt"
-        save_path = f"{root}/output/gpt_large2xl_fpi.pth"
+        save_path = f"{root}/output/gpt_large2xl_fpi.ckpt"
         if not os.path.exists(save_path):
             pre_train_model = ld_ms(path=ckpt_path, filter_prefix=["lamb_m", "gpt.cls1"],
                                     specify_prefix="gpt.gpt", kind="gpt_large", load_gitee_ckpt=True)
@@ -105,7 +105,7 @@ class MindsporeEnlarger:
     @staticmethod
     def gpt_medium2large_aki():
         ckpt_path = f"{root}/ckpt/gpt_medium.ckpt"
-        save_path = f"{root}/output/gpt_medium2large_aki.pth"
+        save_path = f"{root}/output/gpt_medium2large_aki.ckpt"
         if not os.path.exists(save_path):
             pre_train_model = ld_ms(path=ckpt_path, filter_prefix=["lamb_m", "gpt.cls1"],
                                     specify_prefix="gpt.gpt", kind="gpt_medium", load_gitee_ckpt=True)
@@ -115,7 +115,7 @@ class MindsporeEnlarger:
     @staticmethod
     def gpt_medium2large_fpi():
         ckpt_path = f"{root}/ckpt/gpt_medium.ckpt"
-        save_path = f"{root}/output/gpt_medium2large_fpi.pth"
+        save_path = f"{root}/output/gpt_medium2large_fpi.ckpt"
         if not os.path.exists(save_path):
             pre_train_model = ld_ms(path=ckpt_path, filter_prefix=["lamb_m", "gpt.cls1"],
                                     specify_prefix="gpt.gpt", kind="gpt_medium", load_gitee_ckpt=True)
@@ -125,7 +125,7 @@ class MindsporeEnlarger:
     @staticmethod
     def gpt_base2medium_aki():
         ckpt_path = f"{root}/ckpt/gpt_base.ckpt"
-        save_path = f"{root}/output/gpt_base2medium_aki.pth"
+        save_path = f"{root}/output/gpt_base2medium_aki.ckpt"
         if not os.path.exists(save_path):
             pre_train_model = ld_ms(path=ckpt_path, kind="gpt_base", load_gitee_ckpt=False)
             new_model = enlarge_ms(pre_train_model, config_ms("gpt_medium"), "AKI", save_path)
@@ -134,7 +134,7 @@ class MindsporeEnlarger:
     @staticmethod
     def gpt_base2medium_fpi():
         ckpt_path = f"{root}/ckpt/gpt_base.ckpt"
-        save_path = f"{root}/output/gpt_base2medium_fpi.pth"
+        save_path = f"{root}/output/gpt_base2medium_fpi.ckpt"
         if not os.path.exists(save_path):
             pre_train_model = ld_ms(path=ckpt_path, kind="gpt_base", load_gitee_ckpt=False)
             new_model = enlarge_ms(pre_train_model, config_ms("gpt_medium"), "FPI", save_path)
