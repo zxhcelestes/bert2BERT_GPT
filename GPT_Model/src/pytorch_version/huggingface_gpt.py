@@ -683,7 +683,8 @@ class GPT2Model(GPT2PreTrainedModel):
     def parallelize(self, device_map=None):
         # Check validity of device_map
         self.device_map = (
-            get_device_map(len(self.gpt2_decoder), range(torch.cuda.device_count())) if device_map is None else device_map
+            get_device_map(len(self.gpt2_decoder),
+                           range(torch.cuda.device_count())) if device_map is None else device_map
         )
         assert_device_map(self.device_map, len(self.gpt2_decoder))
         self.model_parallel = True

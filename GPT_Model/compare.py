@@ -18,8 +18,7 @@ def compare_model_weights(ms_GPT, py_GPT):
     """
     ms_dict = list(ms_GPT.get_parameters())
     pyt_dict = list(py_GPT.named_parameters())
-    # 有一个参数位置反了，调换
-    pyt_dict[1], pyt_dict[2] = pyt_dict[2], pyt_dict[1]
+
     diff = 0
     for x, y in zip(ms_dict, pyt_dict):
         print(x.name, "<--->", y[0])

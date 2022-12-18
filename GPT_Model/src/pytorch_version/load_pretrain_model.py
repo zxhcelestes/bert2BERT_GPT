@@ -14,7 +14,7 @@ def pre_defined_GPT_config(name):
                           n_embd=768,
                           n_layer=12,
                           n_head=12,
-                          intermediate_size=3072,
+                          n_inner=3072,
                           activation_function="gelu",
                           hidden_dropout=0.1,
                           attention_dropout=0.1,
@@ -32,7 +32,7 @@ def pre_defined_GPT_config(name):
                           n_embd=1024,
                           n_layer=24,
                           n_head=16,
-                          intermediate_size=3072,
+                          n_inner=3072,
                           activation_function="gelu",
                           hidden_dropout=0.1,
                           attention_dropout=0.1,
@@ -50,7 +50,7 @@ def pre_defined_GPT_config(name):
                           n_embd=1280,
                           n_layer=36,
                           n_head=20,
-                          intermediate_size=3072,
+                          n_inner=3072,
                           activation_function="gelu",
                           hidden_dropout=0.1,
                           attention_dropout=0.1,
@@ -68,7 +68,7 @@ def pre_defined_GPT_config(name):
                           n_embd=1600,
                           n_layer=48,
                           n_head=25,
-                          intermediate_size=3072,
+                          n_inner=3072,
                           activation_function="gelu",
                           hidden_dropout=0.1,
                           attention_dropout=0.1,
@@ -137,10 +137,10 @@ def enlarge(model, target_config, method, save_path):
 
 
 if __name__ == '__main__':
-    ckpt_path = "../ckpt/GPT_base.ckpt"
-    save_path = "../output/GPT_base2large_aki.pth"
-    model = load_GPT_base(ckpt_path, "GPT_base", load_gitee_ckpt=True, specify_prefix="GPT_Model.GPT_Model")
-    new_model = enlarge(model, pre_defined_GPT_config("GPT_large"), "AKI", save_path)
+    ckpt_path = "../../ckpt/GPT_base.ckpt"
+    save_path = "../../output/gpt_base2medium_fpi.pth"
+    model = load_GPT_base(ckpt_path, "gpt_base", load_gitee_ckpt=False)
+    new_model = enlarge(model, pre_defined_GPT_config("gpt_medium"), "FPI", save_path)
     for idx, layer in enumerate(new_model.named_parameters()):
         print("-" * 40)
         print(layer[0], "-->", layer[1])

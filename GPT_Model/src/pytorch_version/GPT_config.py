@@ -124,7 +124,7 @@ class GPT2Config(PretrainedConfig):
             n_embd=768,
             n_layer=12,
             n_head=12,
-            n_inner=None,
+            n_inner=3072,
             size_per_head=None,
             activation_function="gelu_new",
             resid_pdrop=0.1,
@@ -170,6 +170,7 @@ class GPT2Config(PretrainedConfig):
 
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
+        self.intermediate_size = n_inner
         if self.size_per_head is None:
             self.size_per_head=self.n_embd//self.n_head
 
