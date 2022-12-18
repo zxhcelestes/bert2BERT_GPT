@@ -904,7 +904,6 @@ class GPT2Model(nn.Cell):
         return self.gpt2_embedding_lookup.embedding_table.asnumpy()
 
 
-
 if __name__ == '__main__':
     GPT_config = GPT2Config()
 
