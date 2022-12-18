@@ -15,7 +15,7 @@ def set_block1(new_model, org_block, org_hidden_size, target_hidden_size):
     """
     choose_num_dict = generate_random_match(org_hidden_size, target_hidden_size)
     dic = dict()
-    head_size = new_model.size_per_head * new_model.n_head
+    head_size = target_hidden_size * 3
 
     for param in org_block:
         key = param.name
@@ -30,17 +30,17 @@ def set_block1(new_model, org_block, org_hidden_size, target_hidden_size):
                                        target_col=1, to_expand="row")
             else:
                 raise Exception("维度超过2")
-        elif "attention" in key:
+        elif "c_attn" in key:
             # KQV三个矩阵
             # 对注意力模型内部参数的修改
             if weights.ndim == 2:
-                dic[key] = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=head_size,
-                                      target_col=target_hidden_size, to_expand="col")
+                dic[key] = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+                                      target_col=head_size, to_expand="row")
             elif weights.ndim == 1:
                 # 截距项
                 concat = mindspore.ops.Concat(0)
                 zeros = mindspore.ops.Zeros()
-                dic[key] = concat([weights, zeros((target_hidden_size - weights.shape[0]), mindspore.float32)])
+                dic[key] = concat([weights, zeros((head_size - weights.shape[0]), mindspore.float32)])
 
             else:
                 raise Exception
@@ -63,7 +63,7 @@ def set_block2(new_model, org_block, org_hidden_size, target_hidden_size):
     :param org_hidden_size: 初始隐藏层规模
     :param target_hidden_size: 目标隐藏层规模
     """
-    head_size = new_model.n_head * new_model.size_per_head
+    head_size = target_hidden_size * 3
     intermediate = new_model.intermediate_size
     choose_num_dict = generate_random_match(org_hidden_size, target_hidden_size)
     dic = dict()
@@ -72,29 +72,35 @@ def set_block2(new_model, org_block, org_hidden_size, target_hidden_size):
         weights = param
         # gpt_decoder.layers.0.attention.output.dense.weight (768, 768)
         # gpt_decoder.layers.0.attention.output.layernorm.gamma (768,)
-        if "attention" in key:
-            if "output" in key:
-                if weights.ndim == 2:
-                    dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
-                                           target_col=head_size, to_expand="row")
-                elif weights.ndim == 1:
-                    dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
-                                           target_col=1, to_expand="row")
-                else:
-                    raise Exception("维度超过2")
+        if "attention.c_proj" in key:
+            if weights.ndim == 2:
+                temp = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+                                  target_col=target_hidden_size, to_expand="row")
+                dic[key] = expand_copy(temp, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+                                       target_col=target_hidden_size, to_expand="col")
+            elif weights.ndim == 1:
+                dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+                                       target_col=1, to_expand="row")
             else:
-                raise Exception("不应出现output以外的参数")
+                raise Exception("维度超过2")
+
         # W_l^1
         # 前馈网络部分参数修改，有两个Liner层
-        elif "intermediate" in key:
+        elif "layer_norm" in key:
+            dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+                                   target_col=1, to_expand="row")
+
+        elif "feedforward.c_fc" in key:
             if "weight" in key:
-                dic[key] = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=intermediate,
-                                      target_col=target_hidden_size, to_expand="col")
+                dic[key] = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+                                      target_col=intermediate, to_expand="row")
             elif "bias" in key:
-                # 扩展bias在FFN扩展部分。此处不需要操作
+                # 扩展bias在FFN扩展部分。此处不需要操作,复制即可
                 concat = mindspore.ops.Concat(0)
                 zeros = mindspore.ops.Zeros()
                 dic[key] = concat([weights, zeros((intermediate - weights.shape[0]), mindspore.float32)])
+                # dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=intermediate,
+                #                       target_col=1, to_expand="row")
             else:
                 raise Exception
         else:
@@ -123,22 +129,20 @@ def set_block3(new_model, org_block, org_hidden_size, target_hidden_size):
         weights = param
         # gpt_decoder.layers.0.output.dense.weight (768, 3072)
         # gpt_decoder.layers.0.output.layernorm.gamma (768,)
-        if "output" in key:
-            if "dense" in key:
-                if "weight" in key:
-                    dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
-                                           target_col=intermediate, to_expand="row")
-                elif "bias" in key:
-                    dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
-                                           target_col=1, to_expand="row")
-                else:
-                    raise Exception
-            elif "layernorm" in key:
-                if weights.ndim == 1:
-                    dic[key] = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
-                                          target_col=1, to_expand="row")
-                else:
-                    raise Exception
+        if "feedforward.c_proj" in key:
+            if "weight" in key:
+                dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=intermediate,
+                                       target_col=target_hidden_size, to_expand="col")
+            elif "bias" in key:
+                dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+                                       target_col=1, to_expand="row")
+
+        elif "feedforward.layernorm" in key:
+            if weights.ndim == 1:
+                dic[key] = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+                                      target_col=1, to_expand="row")
+            else:
+                raise Exception
         else:
             raise Exception(f"块3中不存在{key}层")
         logger.info(f"{key}:  {weights.shape}  -->  {dic[key].shape}")
@@ -162,20 +166,20 @@ def set_ffn_fpi(new_model, ffn_block, org_intermediate_size, target_intermediate
     for param in ffn_block:
         key = param.name
         weights = param
-        if "intermediate" in key:
+        if "c_fc" in key:
             if "weight" in key:
-                dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_intermediate_size,
-                                       target_col=hidden_size, to_expand="row")
+                dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=hidden_size,
+                                       target_col=target_intermediate_size, to_expand="col")
             elif "bias" in key:
                 dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_intermediate_size,
                                        target_col=1,
                                        to_expand="row")
             else:
                 raise Exception
-        elif "output.dense" in key:
+        elif "feedforward.c_proj" in key:
             if "weight" in key:
-                dic[key] = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=hidden_size,
-                                      target_col=target_intermediate_size, to_expand="col")
+                dic[key] = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_intermediate_size,
+                                      target_col=hidden_size, to_expand="row")
             elif "bias" in key:
                 # dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=hidden_size,
                 #                        target_col=1, to_expand="row")
@@ -209,11 +213,11 @@ def set_ffn_aki(new_model, ffn_block, ffn_block_nxt, org_intermediate_size, targ
         key = param.name
         key_nxt = param_nxt.name
         weights = param
-        if "intermediate" in key:
+        if "c_fc" in key:
             if "weight" in key:
                 dic[key] = expand_aki_copy(weights, param_nxt, choose_num_dict=choose_num_dict,
-                                           target_row=target_intermediate_size,
-                                           target_col=hidden_size, to_expand="row")
+                                           target_row=hidden_size,
+                                           target_col=target_intermediate_size, to_expand="col")
             elif "bias" in key:
                 dic[key] = expand_aki_copy(weights, param_nxt, choose_num_dict=choose_num_dict,
                                            target_row=target_intermediate_size,
@@ -221,10 +225,11 @@ def set_ffn_aki(new_model, ffn_block, ffn_block_nxt, org_intermediate_size, targ
                                            to_expand="row")
             else:
                 raise Exception
-        elif "output.dense" in key:
+        elif "feedforward.c_proj" in key:
             if "weight" in key:
-                dic[key] = expand_aki(weights, param_nxt, choose_num_dict=choose_num_dict, target_row=hidden_size,
-                                      target_col=target_intermediate_size, to_expand="col")
+                dic[key] = expand_aki(weights, param_nxt, choose_num_dict=choose_num_dict,
+                                      target_row=target_intermediate_size,
+                                      target_col=hidden_size, to_expand="row")
             elif "bias" in key:
                 concat = mindspore.ops.Concat(0)
                 zeros = mindspore.ops.Zeros()
@@ -241,7 +246,7 @@ def set_ffn_aki(new_model, ffn_block, ffn_block_nxt, org_intermediate_size, targ
     return dic
 
 
-def set_mha_fpi(new_model, mha_block, org_head_num, target_head_num):
+def set_mha_fpi(new_model, mha_block, org_head_size, head_size):
     """
     FPI策略扩展多头
     :param new_model: 新模型
@@ -249,46 +254,20 @@ def set_mha_fpi(new_model, mha_block, org_head_num, target_head_num):
     :param org_head_num: 初始头数目
     :param target_head_num: 目标头数目
     """
-    # 选择的头 (10:1) 十号头选1号头的参数
-    size_per_head = new_model.size_per_head
-    num_heads = new_model.n_head
-    head_size = size_per_head * num_heads
-    choose_head_dict = generate_random_match(org_head_num, target_head_num)
-    new_dict = dict()
-    # 扩展集合，使之符合输入需求
-    for key in choose_head_dict.keys():
-        # 被选中的头的参数块
-        chosen_span = [*range(choose_head_dict.get(key) * size_per_head,
-                              choose_head_dict.get(key) * size_per_head + size_per_head)]
-        # 做出选择的头的参数块
-        choose_span = [*range(key * size_per_head, key * size_per_head + size_per_head)]
-        for after, pre in zip(choose_span, chosen_span):
-            new_dict[after] = pre
+    choose_head_dict = generate_random_match(org_head_size, head_size)
 
     dic = dict()
     for param in mha_block:
         key = param.name
         weights = param
-        if "query" in key or "key" in key or "value" in key:
+        if "c_attn" in key:
             # 扩展输出，只需要copy
             if "weight" in key:
-                dic[key] = expand_copy(weights, target_row=head_size, target_col=new_model.hidden_size,
-                                       choose_num_dict=new_dict, to_expand="row")
+                dic[key] = expand_copy(weights, target_row=new_model.config.n_embed, target_col=head_size,
+                                       choose_num_dict=choose_head_dict, to_expand="col")
             elif "bias" in key:
                 dic[key] = expand_copy(weights, target_row=head_size, target_col=1,
-                                       choose_num_dict=new_dict, to_expand="row")
-            else:
-                raise Exception
-        elif "output" in key:
-            # 扩展输入，需要fpi
-            if "weight" in key:
-                dic[key] = expand_fpi(weights, target_row=new_model.hidden_size, target_col=head_size,
-                                      choose_num_dict=new_dict, to_expand="col")
-            elif "bias" in key:
-                # 不用扩展
-                concat = mindspore.ops.Concat(0)
-                zeros = mindspore.ops.Zeros()
-                dic[key] = concat([weights, zeros((new_model.hidden_size - weights.shape[0]), mindspore.float32)])
+                                       choose_num_dict=choose_head_dict, to_expand="row")
             else:
                 raise Exception
         if key in dic.keys():
@@ -299,7 +278,7 @@ def set_mha_fpi(new_model, mha_block, org_head_num, target_head_num):
     return dic
 
 
-def set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_num, target_head_num):
+def set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_size, head_size):
     """
     AKI策略扩展多头
     :param new_model: 新模型
@@ -308,47 +287,22 @@ def set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_num, target_head_n
     :param org_head_num: 原始头数目
     :param target_head_num: 目标头数目
     """
-    # 选择的头 (10:1) 十号头选1号头的参数
-    size_per_head = new_model.size_per_head
-    num_heads = new_model.n_head
-    head_size = size_per_head * num_heads
-    choose_head_dict = generate_random_match(org_head_num, target_head_num)
-    new_dict = dict()
-    # 扩展集合，使之符合输入需求
-    for key in choose_head_dict.keys():
-        # 被选中的头的参数块
-        chosen_span = [*range(choose_head_dict.get(key) * size_per_head,
-                              choose_head_dict.get(key) * size_per_head + size_per_head)]
-        # 做出选择的头的参数块
-        choose_span = [*range(key * size_per_head, key * size_per_head + size_per_head)]
-        for after, pre in zip(choose_span, chosen_span):
-            new_dict[after] = pre
+    choose_head_dict = generate_random_match(org_head_size, head_size)
     dic = dict()
     for param, param_nxt in zip(mha_block, mha_block_nxt):
         key = param.name
         key_nxt = param_nxt.name
         weights = param
         weights_nxt = param_nxt
-        if "query" in key or "key" in key or "value" in key:
+        if "c_attn" in key:
             # 扩展输出，只需要copy
             if "weight" in key:
-                dic[key] = expand_aki_copy(weights, weights_nxt, target_row=head_size, target_col=new_model.hidden_size,
-                                           choose_num_dict=new_dict, to_expand="row")
+                dic[key] = expand_aki_copy(weights, weights_nxt, target_row=new_model.config.n_embed,
+                                           target_col=head_size,
+                                           choose_num_dict=choose_head_dict, to_expand="col")
             elif "bias" in key:
                 dic[key] = expand_aki_copy(weights, weights_nxt, target_row=head_size, target_col=1,
-                                           choose_num_dict=new_dict, to_expand="row")
-            else:
-                raise Exception
-        elif "output" in key:
-            # 扩展输入，需要aki
-            if "weight" in key:
-                dic[key] = expand_aki(weights, weights_nxt, target_row=new_model.hidden_size, target_col=head_size,
-                                      choose_num_dict=new_dict, to_expand="col")
-            elif "bias" in key:
-                # 不用扩展
-                concat = mindspore.ops.Concat(0)
-                zeros = mindspore.ops.Zeros()
-                dic[key] = concat([weights, zeros((new_model.hidden_size - weights.shape[0]), mindspore.float32)])
+                                           choose_num_dict=choose_head_dict, to_expand="row")
             else:
                 raise Exception
         if key in dic.keys():
@@ -434,8 +388,9 @@ def set_decoder(new_model, org_model, org_decoder, new_decoder, org_hidden_size,
             for i in range(org_model.n_layer):
                 temp_layer = modulelist.__getitem__(i)
                 mha_block = find_mha_block(temp_layer)
-                temp_dic = set_mha_fpi(new_model, mha_block, org_head_num=org_model.n_head,
-                                       target_head_num=new_model.n_head)
+                head_size = new_model.config.n_embed * 3
+                org_head_size = org_model.config.n_embed * 3
+                temp_dic = set_mha_fpi(new_model, mha_block, org_head_size, head_size)
                 dic.update(temp_dic)
         elif method == "AKI":
             temp_layer = modulelist.__getitem__(0)
@@ -443,13 +398,13 @@ def set_decoder(new_model, org_model, org_decoder, new_decoder, org_hidden_size,
                 nxt_layer = modulelist.__getitem__(i + 1)
                 mha_block = find_mha_block(temp_layer)
                 mha_block_nxt = find_mha_block(nxt_layer)
-                temp_dict = set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_num=org_model.n_head,
-                                        target_head_num=new_model.n_head)
+                head_size = new_model.config.n_embed * 3
+                org_head_size = org_model.config.n_embed * 3
+                temp_dict = set_mha_aki(new_model, mha_block, mha_block_nxt, org_head_size, head_size)
                 temp_layer = nxt_layer
                 dic.update(temp_dict)
             mha_block = find_mha_block(temp_layer)
-            temp_dict = set_mha_fpi(new_model, mha_block, org_head_num=org_model.n_head,
-                                    target_head_num=new_model.n_head)
+            temp_dict = set_mha_fpi(new_model, mha_block, org_head_size, head_size)
             dic.update(temp_dict)
 
         else:
@@ -515,7 +470,7 @@ def set_depth(new_model, decoder_block, num_layers, start_idx, end_idx):
         for name in decoder_block.keys():
             num_lay = find_number(name)
             if str(equal) == num_lay:
-                temp_name = name.replace(str(equal), str(idx), 1)
+                temp_name = name.replace("."+str(equal)+".", "."+str(idx)+".", 1)
                 logger.info(f"{name}-->{temp_name}")
                 layer = decoder_block.get(name)
                 para = mindspore.Parameter(layer.data, name=temp_name)
@@ -541,11 +496,12 @@ def set_gpt_layer_fpi(new_model, org_model, gpt_layer, org_hidden_size, target_h
     # 在第一级的decoder，需要加入embedding_table
     for param in all_layers:
         name = param.name
-        if "query" in name or "key" in name or "value" in name:
+        if "c_attn" in name:
             block1.append(param)
-        elif "attention.output" in name or "intermediate" in name:
+
+        elif "attention.c_proj" in name or "attention.layer_norm" in name or "feedforward.c_fc" in name:
             block2.append(param)
-        elif "output" in name:
+        elif "feedforward.c_proj" in name or "feedforward.layernorm" in name:
             block3.append(param)
 
     if level == 0:
@@ -573,13 +529,10 @@ def set_dense(new_model, org_model, org_hidden_size, target_hidden_size):
     for param in dense_block:
         key = param.name
         weights = param
-        if "weight" in key:
-            # 先扩展输入
-            weights1 = expand_fpi(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
-                                  target_col=target_hidden_size, to_expand="col")
-            dic[key] = expand_copy(weights1, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
+        if "gamma" in key:
+            dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
                                    target_col=1, to_expand="row")
-        elif "bias" in key:
+        elif "beta" in key:
             dic[key] = expand_copy(weights, choose_num_dict=choose_num_dict, target_row=target_hidden_size,
                                    target_col=1, to_expand="row")
         else:

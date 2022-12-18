@@ -116,9 +116,9 @@ if __name__ == '__main__':
                                     specify_prefix="GPT.GPT", kind="GPT_base", load_gitee_ckpt=True)
     new_model = enlarge(pre_train_model, pre_defined_GPT_config("GPT_large"), "AKI", save_path)
     model = load_GPT_base(path=save_path, specify_prefix=None, kind="GPT_large")
-    # for params in new_model.get_parameters():
-    #     print(params.name)
-    #     print(params.value())
+    for params in new_model.get_parameters():
+        print(params.name)
+        print(params.value())
 
     # save_path = "../output/GPT_small2base_aki.ckpt"
     # pre_train_model = load_GPT_base(path="../ckpt/GPT_small.ckpt", kind="GPT_small", load_gitee_ckpt=False)

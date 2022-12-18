@@ -6,7 +6,7 @@ def find_ffn_block(bert_layer):
     ffn_block = []
     for param in all_layers:
         name = param.name
-        if "intermediate" in name or ("output.dense" in name and "attention" not in name):
+        if "feedforward.c_fc" in name or "feedforward.c_proj.weight" in name:
             ffn_block.append(param)
     return ffn_block
 
@@ -17,7 +17,7 @@ def find_mha_block(bert_layer):
 
     for param in all_layers:
         name = param.name
-        if "key" in name or "query" in name or "value" in name or ("output.dense" in name and "attention" in name):
+        if "masked_self_attention.c_attn" in name:
             mha_block.append(param)
     return mha_block
 
@@ -36,7 +36,7 @@ def find_embeddings(new_model):
 
 def find_dense_weight(new_model):
     dense_part = []
-    pattern = "^ln_f.*"
+    pattern = "^layer_norm.*"
     all_layers = list(new_model.get_parameters())
     for param in all_layers:
         name = param.name

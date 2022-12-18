@@ -5,7 +5,7 @@ def find_ffn_block(bert_layer, prefix):
     all_layers = list(bert_layer.named_parameters())
     ffn_block = []
     for name, param in all_layers:
-        if "intermediate" in name or ("output.dense" in name and "attention" not in name):
+        if "mlp.c_fc" in name or "mlp.c_proj" in name:
             ffn_block.append((prefix + name, param))
     return ffn_block
 
@@ -15,7 +15,7 @@ def find_mha_block(bert_layer, prefix):
     mha_block = []
 
     for name, param in all_layers:
-        if "key" in name or "query" in name or "value" in name or ("output.dense" in name and "attention" in name):
+        if "c_attn" in name:
             mha_block.append((prefix + name, param))
     return mha_block
 
@@ -24,7 +24,7 @@ def find_embeddings(new_model):
     all_layers = list(new_model.named_parameters())
     embeddings = []
     for name, param in all_layers:
-        if "embedding" in name:
+        if "wte" in name or "wpe" in name:
             embeddings.append((name, param))
         else:
             break

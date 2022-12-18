@@ -44,6 +44,7 @@ def expand_fpi(org_matrix, target_row, target_col, choose_num_dict, to_expand):
     assert org_matrix.ndim == 2
     row, col = org_matrix.shape
     if target_row < row or target_col < col:
+        logger.debug(f"org_row:{row} , row: {target_row} , org_col{col} ,col {target_col}")
         raise Exception("expanded row or col smaller than origin")
 
     new = torch.zeros((target_row, target_col), dtype=torch.float32)
@@ -99,6 +100,7 @@ def expand_copy(org_matrix, target_row, target_col, choose_num_dict, to_expand):
     row, col = org_matrix.shape
 
     if target_row < row or target_col < col:
+        logger.debug(f"org_row:{row} , row: {target_row} , org_col{col} ,col {target_col}")
         raise Exception("expanded row or col smaller than origin")
 
     new = torch.zeros((target_row, target_col), dtype=torch.float32)
@@ -117,7 +119,7 @@ def expand_copy(org_matrix, target_row, target_col, choose_num_dict, to_expand):
         for temp_row in range(row, target_row):
             choice = choose_num_dict.get(temp_row)
             new[temp_row, :] = new[choice, :]
-
+    logger.debug(new.shape)
     if flag == 1:
         new = new.view(-1)
     logger.info(f"正在执行Copy扩展{to_expand}")
